@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, ListChecks, ClipboardList, CalendarCheck2, CalendarClock, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, ListChecks, CalendarCheck2, CalendarClock, Users, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Logo } from "./Logo";
 
@@ -10,7 +10,6 @@ export function Sidebar() {
   const items = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/oportunidades", label: "Oportunidades", icon: ListChecks },
-    { to: "/cirugias-cotizadas", label: "Cirugías cotizadas", icon: ClipboardList },
     { to: "/cirugias-efectivas", label: "Cirugías efectivas", icon: CalendarCheck2 },
     { to: "/seguimientos", label: "Seguimientos", icon: CalendarClock },
   ];

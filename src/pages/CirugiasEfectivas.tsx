@@ -1,33 +1,50 @@
 import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { AppLayout } from "../components/AppLayout";
-import { ESTADOS_COTIZACION } from "../types";
-import type { CotizacionQuirurgica } from "../types";
+import { Badge } from "../components/Badge";
+import { ESPECIALIDADES, ESTADOS } from "../types";
+import type { Oportunidad } from "../types";
+import { useAuth } from "../context/AuthContext";
 
+function fmtBs(n: number) {
+  return "Bs " + n.toLocaleString("es-BO");
+}
 function fmtFecha(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 const ESTADO_COLOR: Record<string, { bg: string; fg: string }> = {
-  "Cirugía Realizada": { bg: "var(--teal-soft)", fg: "var(--teal)" },
+  "Cirugía Cotizada": { bg: "var(--gray-soft)", fg: "var(--slate-700)" },
   "Cirugía Programada": { bg: "var(--teal-soft)", fg: "var(--teal)" },
-  "Con seguimiento": { bg: "#EAF0EC", fg: "var(--green-800)" },
-  "Cirugía Postergada": { bg: "var(--orange-soft)", fg: "var(--orange)" },
-  "No convertido": { bg: "var(--gray-soft)", fg: "var(--slate-500)" },
+  "Cotización con seguimiento": { bg: "#EAF0EC", fg: "var(--green-800)" },
+  "Cirugía postergada": { bg: "var(--orange-soft)", fg: "var(--orange)" },
+  "Cirugía realizada": { bg: "var(--teal-soft)", fg: "var(--teal)" },
+  "Cirugía no convertida": { bg: "var(--brick-soft)", fg: "var(--brick)" },
 };
 
 export function CirugiasEfectivas() {
-  const [cotizaciones, setCotizaciones] = useState<CotizacionQuirurgica[]>([]);
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
+  const [oportunidades, setOportunidades] = useState<Oportunidad[]>([]);
   const [cargando, setCargando] = useState(true);
   const [guardandoId, setGuardandoId] = useState<string | null>(null);
+
+  const [busqueda, setBusqueda] = useState("");
+  const [fEstado, setFEstado] = useState("Todos");
+  const [fEspecialidad, setFEspecialidad] = useState("Todas");
 
   async function cargar() {
     setCargando(true);
     const { data } = await supabase
-      .from("cotizaciones_quirurgicas")
-      .select("*")
-      .order("fecha", { ascending: false });
-    if (data) setCotizaciones(data as CotizacionQuirurgica[]);
+      .from("oportunidades")
+      .select("*, medicos(nombre)")
+      .order("created_at", { ascending: false });
+    if (data) {
+      setOportunidades(
+        (data as any[]).map((o) => ({ ...o, medico_nombre: o.medicos?.nombre || null })) as Oportunidad[]
+      );
+    }
     setCargando(false);
   }
 
@@ -37,79 +54,110 @@ export function CirugiasEfectivas() {
 
   async function actualizarEstado(id: string, estado: string) {
     setGuardandoId(id);
-    setCotizaciones((prev) => prev.map((c) => (c.id === id ? { ...c, estado } : c)));
-    await supabase.from("cotizaciones_quirurgicas").update({ estado }).eq("id", id);
+    setOportunidades((prev) => prev.map((o) => (o.id === id ? { ...o, estado } : o)));
+    await supabase.from("oportunidades").update({ estado }).eq("id", id);
     setGuardandoId(null);
   }
 
+  const filtradas = oportunidades.filter((o) => {
+    if (fEstado !== "Todos" && o.estado !== fEstado) return false;
+    if (fEspecialidad !== "Todas" && o.especialidad !== fEspecialidad) return false;
+    if (busqueda && !o.paciente_nombre.toLowerCase().includes(busqueda.toLowerCase())) return false;
+    return true;
+  });
+
   return (
-    <AppLayout title="Cirugías efectivas" subtitle="Estado actual de cada cirugía cotizada">
-      <div className="ef-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-[color:var(--slate-500)] border-b border-[color:var(--line)]">
-                <th className="py-3 px-4 font-medium">N° Cotización</th>
-                <th className="py-3 px-4 font-medium">Fecha</th>
-                <th className="py-3 px-4 font-medium">Paciente</th>
-                <th className="py-3 px-4 font-medium">Código cliente</th>
-                <th className="py-3 px-4 font-medium">Diagnóstico / procedimiento</th>
-                <th className="py-3 px-4 font-medium">Médico solicitante</th>
-                <th className="py-3 px-4 font-medium">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cargando && (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
-                    Cargando…
-                  </td>
+    <AppLayout title="Cirugías efectivas" subtitle="Tabla dinámica de todas las oportunidades, con su estado actual">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 ef-input rounded-sm px-3 py-2 flex-1 min-w-[200px]">
+            <Search size={15} color="var(--slate-500)" />
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar paciente"
+              className="outline-none text-sm w-full bg-transparent"
+            />
+          </div>
+          <select value={fEspecialidad} onChange={(e) => setFEspecialidad(e.target.value)} className="ef-input rounded-sm px-3 py-2 text-sm">
+            <option>Todas</option>
+            {ESPECIALIDADES.map((e) => (
+              <option key={e}>{e}</option>
+            ))}
+          </select>
+          <select value={fEstado} onChange={(e) => setFEstado(e.target.value)} className="ef-input rounded-sm px-3 py-2 text-sm">
+            <option>Todos</option>
+            {ESTADOS.map((e) => (
+              <option key={e}>{e}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="ef-card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-[color:var(--slate-500)] border-b border-[color:var(--line)]">
+                  <th className="py-3 px-4 font-medium">N° Cotización</th>
+                  <th className="py-3 px-4 font-medium">Fecha</th>
+                  <th className="py-3 px-4 font-medium">Paciente</th>
+                  <th className="py-3 px-4 font-medium">Código cliente</th>
+                  <th className="py-3 px-4 font-medium">Diagnóstico / procedimiento</th>
+                  <th className="py-3 px-4 font-medium">Especialidad</th>
+                  <th className="py-3 px-4 font-medium">Médico solicitante</th>
+                  {isAdmin && <th className="py-3 px-4 font-medium">Monto</th>}
+                  <th className="py-3 px-4 font-medium">Estado</th>
                 </tr>
-              )}
-              {!cargando &&
-                cotizaciones.map((c) => {
-                  const estilo = c.estado ? ESTADO_COLOR[c.estado] : null;
-                  return (
-                    <tr key={c.id} className="border-b border-[color:var(--line)] last:border-0">
-                      <td className="py-3 px-4 ef-tabular font-semibold">{c.numero_cotizacion}</td>
-                      <td className="py-3 px-4 ef-tabular text-[color:var(--slate-700)]">{fmtFecha(c.fecha)}</td>
-                      <td className="py-3 px-4">{c.paciente_nombre}</td>
-                      <td className="py-3 px-4 text-[color:var(--slate-700)]">{c.codigo_cliente || "—"}</td>
-                      <td className="py-3 px-4">{c.diagnostico_procedimiento}</td>
-                      <td className="py-3 px-4 text-[color:var(--slate-700)]">{c.medico_solicitante}</td>
-                      <td className="py-3 px-4">
-                        <select
-                          value={c.estado || ""}
-                          onChange={(e) => actualizarEstado(c.id, e.target.value)}
-                          disabled={guardandoId === c.id}
-                          className="rounded-sm px-2 py-1.5 text-xs font-semibold border-0"
-                          style={{
-                            background: estilo?.bg || "var(--gray-soft)",
-                            color: estilo?.fg || "var(--slate-700)",
-                          }}
-                        >
-                          <option value="" disabled>
-                            Seleccionar…
-                          </option>
-                          {ESTADOS_COTIZACION.map((e) => (
-                            <option key={e} value={e}>
-                              {e}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  );
-                })}
-              {!cargando && cotizaciones.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
-                    Todavía no hay cotizaciones registradas. Agrégalas desde "Cirugías cotizadas".
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cargando && (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
+                      Cargando…
+                    </td>
+                  </tr>
+                )}
+                {!cargando &&
+                  filtradas.map((o) => {
+                    const estilo = ESTADO_COLOR[o.estado];
+                    return (
+                      <tr key={o.id} className="border-b border-[color:var(--line)] last:border-0">
+                        <td className="py-3 px-4 ef-tabular font-semibold">{o.numero_cotizacion}</td>
+                        <td className="py-3 px-4 ef-tabular text-[color:var(--slate-700)]">{fmtFecha(o.created_at)}</td>
+                        <td className="py-3 px-4">{o.paciente_nombre}</td>
+                        <td className="py-3 px-4 text-[color:var(--slate-700)]">{o.codigo_cliente || "—"}</td>
+                        <td className="py-3 px-4">{o.diagnostico_procedimiento}</td>
+                        <td className="py-3 px-4 text-[color:var(--slate-700)]">{o.especialidad}</td>
+                        <td className="py-3 px-4 text-[color:var(--slate-700)]">{o.medico_nombre || "—"}</td>
+                        {isAdmin && <td className="py-3 px-4 ef-tabular">{fmtBs(Number(o.monto))}</td>}
+                        <td className="py-3 px-4">
+                          <select
+                            value={o.estado}
+                            onChange={(e) => actualizarEstado(o.id, e.target.value)}
+                            disabled={guardandoId === o.id}
+                            className="rounded-sm px-2 py-1.5 text-xs font-semibold border-0"
+                            style={{ background: estilo?.bg || "var(--gray-soft)", color: estilo?.fg || "var(--slate-700)" }}
+                          >
+                            {ESTADOS.map((e) => (
+                              <option key={e} value={e}>
+                                {e}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                {!cargando && filtradas.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
+                      Ninguna oportunidad coincide con los filtros aplicados.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </AppLayout>

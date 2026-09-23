@@ -1,17 +1,21 @@
 -- =====================================================================
 -- EMBUDO DE CONVERSIÓN QUIRÚRGICA — SCRIPT ÚNICO DE BASE DE DATOS
+-- Versión 2: nueva lista de médicos, especialidades, tipos de paciente,
+-- estados del ciclo quirúrgico, y consolidación de "Cirugías cotizadas"
+-- dentro de "Oportunidades".
 -- =====================================================================
 -- Cómo usar este archivo:
 -- 1. Entra a tu proyecto de Supabase.
 -- 2. Ve a "SQL Editor" (en el menú de la izquierda).
 -- 3. Crea una consulta nueva, pega TODO este archivo, y presiona "Run".
--- 4. Solo necesitas hacer esto UNA vez.
+-- Este script está escrito para poder ejecutarse más de una vez sin
+-- romper nada: si ya tenías la base de datos creada con la versión
+-- anterior, este mismo archivo la actualiza (migra) a la nueva
+-- estructura, incluidos los datos que ya hubieras cargado.
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
 -- 1. TABLA: profiles
--- Guarda el nombre y el rol de cada persona que usa el sistema.
--- Está conectada uno a uno con la tabla interna de usuarios de Supabase.
 -- ---------------------------------------------------------------------
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -23,40 +27,65 @@ create table if not exists public.profiles (
 
 -- ---------------------------------------------------------------------
 -- 2. TABLA: medicos
--- Lista simple de médicos de la clínica, usada en los formularios.
+-- Lista fija de médicos de la clínica. Ya no tiene especialidad propia:
+-- la especialidad se elige a nivel de cada oportunidad quirúrgica.
 -- ---------------------------------------------------------------------
 create table if not exists public.medicos (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
-  especialidad text not null,
   activo boolean not null default true,
   created_at timestamptz not null default now()
 );
 
+-- Migración: si la tabla ya existía con una columna "especialidad", se elimina.
+alter table public.medicos drop column if exists especialidad;
+
+-- Migración: nombre único, para poder agregar médicos nuevos con
+-- "ON CONFLICT DO NOTHING" cuando alguien elige la opción "OTRO".
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'medicos_nombre_key'
+  ) then
+    alter table public.medicos add constraint medicos_nombre_key unique (nombre);
+  end if;
+end $$;
+
+-- Se reemplaza la lista de médicos por la lista oficial entregada por la clínica.
+delete from public.medicos where nombre not in (
+  'JAVIER MERCADO GORDILLO', 'WINDSOR JORDAN TANINAKA', 'GABRIELA HERRERA ESPECHI',
+  'ARIEL IBAÑEZ RODRIGUEZ', 'ESTELA ANGELICA MAMANI HUARACHI', 'MARCO SANTIAGO ALDANA CABRERA',
+  'JAIRO AUGUSTO PRADA BARBOSA', 'DANILO RICHARD SERRANO SALAZAR', 'LISSETH IBLIN MOSCOSO ZELAYA',
+  'MAURICIO LOPEZ MEJIA', 'ALEX CONDORI', 'SILVIA YEPEZ RODRIGUEZ', 'LIZETH CALLE VALDA',
+  'PABLO MEDRANO', 'MARISOL CUELLAR LANUZA', 'DANIELA RAMOS', 'RAUL VELASQUEZ TORREZ',
+  'OSVALDO ORTIZ UYUNI', 'GLENDA MONTAÑO', 'JUAN CARLOS RENGEL RETAMOSOS', 'JAVIER PACHECO CARVAJAL'
+);
+
+insert into public.medicos (nombre) values
+  ('JAVIER MERCADO GORDILLO'), ('WINDSOR JORDAN TANINAKA'), ('GABRIELA HERRERA ESPECHI'),
+  ('ARIEL IBAÑEZ RODRIGUEZ'), ('ESTELA ANGELICA MAMANI HUARACHI'), ('MARCO SANTIAGO ALDANA CABRERA'),
+  ('JAIRO AUGUSTO PRADA BARBOSA'), ('DANILO RICHARD SERRANO SALAZAR'), ('LISSETH IBLIN MOSCOSO ZELAYA'),
+  ('MAURICIO LOPEZ MEJIA'), ('ALEX CONDORI'), ('SILVIA YEPEZ RODRIGUEZ'), ('LIZETH CALLE VALDA'),
+  ('PABLO MEDRANO'), ('MARISOL CUELLAR LANUZA'), ('DANIELA RAMOS'), ('RAUL VELASQUEZ TORREZ'),
+  ('OSVALDO ORTIZ UYUNI'), ('GLENDA MONTAÑO'), ('JUAN CARLOS RENGEL RETAMOSOS'), ('JAVIER PACHECO CARVAJAL')
+on conflict (nombre) do nothing;
+
 -- ---------------------------------------------------------------------
 -- 3. TABLA: oportunidades
--- El corazón del sistema: cada fila es un paciente en el embudo de
--- conversión quirúrgica, desde la indicación hasta la cirugía (o pérdida).
+-- Registro único de cada paciente: reemplaza y absorbe lo que antes
+-- era la tabla separada "cotizaciones_quirurgicas".
 -- ---------------------------------------------------------------------
 create table if not exists public.oportunidades (
   id uuid primary key default gen_random_uuid(),
   paciente_nombre text not null,
   paciente_edad int,
   especialidad text not null,
-  procedimiento text not null,
   medico_id uuid references public.medicos(id) on delete set null,
-  tipo_paciente text not null check (tipo_paciente in ('Particular', 'Asegurado')),
+  tipo_paciente text not null default 'Privado',
   seguro text,
   metodo_pago text not null default 'Efectivo',
   monto numeric(12, 2) not null default 0,
-  estado text not null default 'Indicación quirúrgica' check (
-    estado in (
-      'Indicación quirúrgica', 'Pendiente de cotización', 'Cotizado',
-      'Presupuesto enviado', 'En seguimiento', 'Cirugía aceptada',
-      'Cirugía programada', 'Cirugía realizada',
-      'No convertido', 'Perdido', 'Postergado', 'Cancelado'
-    )
-  ),
+  estado text not null default 'Cirugía Cotizada',
   motivo_perdida text,
   created_by uuid references public.profiles(id),
   updated_by uuid references public.profiles(id),
@@ -64,59 +93,137 @@ create table if not exists public.oportunidades (
   updated_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- 4. TABLA: cotizaciones_quirurgicas
--- Registro simple de cotizaciones (independiente del embudo de
--- oportunidades) con su posterior seguimiento de estado en la página
--- "Cirugías Efectivas".
--- ---------------------------------------------------------------------
-create table if not exists public.cotizaciones_quirurgicas (
-  id uuid primary key default gen_random_uuid(),
-  numero_cotizacion text not null,
-  fecha date not null default current_date,
-  paciente_nombre text not null,
-  codigo_cliente text,
-  diagnostico_procedimiento text not null,
-  medico_solicitante text not null,
-  estado text check (
-    estado in (
-      'Cirugía Realizada', 'Cirugía Programada', 'Con seguimiento',
-      'Cirugía Postergada', 'No convertido'
-    )
-  ),
-  created_by uuid references public.profiles(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- Migración: columna "procedimiento" (versión anterior) pasa a llamarse
+-- "diagnostico_procedimiento", tal como pide la nueva estructura.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'oportunidades' and column_name = 'procedimiento'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'oportunidades' and column_name = 'diagnostico_procedimiento'
+  ) then
+    alter table public.oportunidades rename column procedimiento to diagnostico_procedimiento;
+  end if;
+end $$;
+alter table public.oportunidades add column if not exists diagnostico_procedimiento text not null default '';
 
-create index if not exists idx_cotizaciones_fecha on public.cotizaciones_quirurgicas(fecha);
+-- Migración: nuevos campos requeridos por la estructura actualizada.
+alter table public.oportunidades add column if not exists codigo_cliente text;
+alter table public.oportunidades add column if not exists fecha_probable_cirugia date;
+
+-- Migración: número de cotización autonumérico (se genera solo, la
+-- persona no tiene que escribirlo). Usa una secuencia propia de Postgres.
+create sequence if not exists public.cotizacion_seq;
+alter table public.oportunidades add column if not exists numero_cotizacion text;
+alter table public.oportunidades
+  alter column numero_cotizacion set default ('COT-' || lpad(nextval('public.cotizacion_seq')::text, 4, '0'));
+update public.oportunidades
+  set numero_cotizacion = 'COT-' || lpad(nextval('public.cotizacion_seq')::text, 4, '0')
+  where numero_cotizacion is null;
+alter table public.oportunidades alter column numero_cotizacion set not null;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'oportunidades_numero_cotizacion_key'
+  ) then
+    alter table public.oportunidades add constraint oportunidades_numero_cotizacion_key unique (numero_cotizacion);
+  end if;
+end $$;
+
+-- Migración: normalizar valores anteriores de "tipo_paciente" a la nueva
+-- nomenclatura, antes de aplicar la nueva regla de validación.
+update public.oportunidades set tipo_paciente = 'Privado' where tipo_paciente = 'Particular';
+update public.oportunidades set tipo_paciente = 'Asegurado o Convenio' where tipo_paciente = 'Asegurado';
+alter table public.oportunidades drop constraint if exists oportunidades_tipo_paciente_check;
+alter table public.oportunidades add constraint oportunidades_tipo_paciente_check
+  check (tipo_paciente in ('Privado', 'Asegurado o Convenio', 'Institucional', 'Seguridad Social'));
+
+-- Migración: normalizar especialidades antiguas a la nueva lista oficial,
+-- antes de aplicar la nueva regla de validación.
+update public.oportunidades set especialidad = 'Cirugía Plástica, Estética y Reparadora' where especialidad = 'Cirugía Plástica';
+update public.oportunidades set especialidad = 'Cirugía Gastroenterológica y del Aparato Digestivo' where especialidad = 'Cirugía Bariátrica';
+update public.oportunidades set especialidad = 'Traumatología y Cirugía Ortopédica' where especialidad = 'Traumatología';
+update public.oportunidades set especialidad = 'Ginecología y Obstetricia' where especialidad = 'Ginecología';
+update public.oportunidades set especialidad = 'Oftalmología (Cirugía Ocular)' where especialidad = 'Oftalmología';
+alter table public.oportunidades drop constraint if exists oportunidades_especialidad_check;
+alter table public.oportunidades add constraint oportunidades_especialidad_check
+  check (especialidad in (
+    'Cirugía Cardiovascular', 'Cirugía de Cabeza, Cuello y Maxilofacial', 'Cirugía de Mano',
+    'Cirugía Gastroenterológica y del Aparato Digestivo', 'Cirugía General', 'Cirugía Oncología (Oncocirugía)',
+    'Cirugía Pediátrica', 'Cirugía Plástica, Estética y Reparadora', 'Cirugía Torácica',
+    'Cirugía Vascular y Angiología', 'Gastroenterología', 'Ginecología y Obstetricia',
+    'Ginecología y Oncología', 'Mastología', 'Medicina Interna', 'Neurocirugía',
+    'Oftalmología (Cirugía Ocular)', 'Otorrinolaringología (Cirugía de Oído, Nariz y Garganta)',
+    'Pediatría', 'Proctología', 'Traumatología y Cirugía Ortopédica', 'Urología'
+  ));
+
+-- Migración: normalizar los estados antiguos (de 12 estados) a los 6
+-- estados oficiales de la nueva estructura, antes de aplicar la nueva regla.
+update public.oportunidades set estado = 'Cirugía Cotizada'
+  where estado in ('Indicación quirúrgica', 'Pendiente de cotización', 'Cotizado', 'Presupuesto enviado');
+update public.oportunidades set estado = 'Cotización con seguimiento'
+  where estado in ('En seguimiento', 'Cirugía aceptada');
+update public.oportunidades set estado = 'Cirugía Programada' where estado = 'Cirugía programada';
+update public.oportunidades set estado = 'Cirugía postergada' where estado = 'Postergado';
+update public.oportunidades set estado = 'Cirugía no convertida' where estado in ('No convertido', 'Perdido', 'Cancelado');
+alter table public.oportunidades drop constraint if exists oportunidades_estado_check;
+alter table public.oportunidades add constraint oportunidades_estado_check
+  check (estado in (
+    'Cirugía Cotizada', 'Cirugía Programada', 'Cotización con seguimiento',
+    'Cirugía postergada', 'Cirugía realizada', 'Cirugía no convertida'
+  ));
+
+create index if not exists idx_oportunidades_estado on public.oportunidades(estado);
+create index if not exists idx_oportunidades_especialidad on public.oportunidades(especialidad);
 
 -- ---------------------------------------------------------------------
--- 5. TABLA: seguimientos
--- Cada contacto realizado con el paciente dentro de una oportunidad.
+-- Se elimina la tabla "cotizaciones_quirurgicas": su información ahora
+-- vive directamente en "oportunidades" (columnas numero_cotizacion,
+-- codigo_cliente, diagnostico_procedimiento).
+-- ---------------------------------------------------------------------
+drop table if exists public.cotizaciones_quirurgicas cascade;
+
+-- ---------------------------------------------------------------------
+-- 4. TABLA: seguimientos
+-- Historial de cada contacto realizado con el paciente.
 -- ---------------------------------------------------------------------
 create table if not exists public.seguimientos (
   id uuid primary key default gen_random_uuid(),
   oportunidad_id uuid not null references public.oportunidades(id) on delete cascade,
   fecha date not null default current_date,
-  canal text not null check (
-    canal in ('WhatsApp', 'Llamada telefónica', 'Contacto presencial', 'Correo electrónico', 'Otro')
-  ),
+  clasificacion text,
+  canal text,
   responsable_id uuid references public.profiles(id),
-  resultado text not null,
-  observaciones text,
+  resultado text,
   proxima_accion text,
   fecha_proxima_accion date,
   created_at timestamptz not null default now()
 );
 
+-- Migración: columnas nuevas si la tabla ya existía en su versión anterior.
+alter table public.seguimientos add column if not exists clasificacion text;
+alter table public.seguimientos alter column canal drop not null;
+alter table public.seguimientos alter column resultado drop not null;
+alter table public.seguimientos drop column if exists observaciones;
+
+-- Migración: normalizar canal antiguo a la nueva nomenclatura exacta.
+update public.seguimientos set canal = 'Llamada Telefónica' where canal = 'Llamada telefónica';
+update public.seguimientos set canal = 'Contacto presencial' where canal = 'Otro';
+
+alter table public.seguimientos drop constraint if exists seguimientos_canal_check;
+alter table public.seguimientos add constraint seguimientos_canal_check
+  check (canal is null or canal in ('WhatsApp', 'Llamada Telefónica', 'Contacto presencial', 'Correo electrónico'));
+
+alter table public.seguimientos drop constraint if exists seguimientos_clasificacion_check;
+alter table public.seguimientos add constraint seguimientos_clasificacion_check
+  check (clasificacion is null or clasificacion in ('Con seguimiento', 'Sin seguimiento'));
+
 create index if not exists idx_seguimientos_oportunidad on public.seguimientos(oportunidad_id);
-create index if not exists idx_oportunidades_estado on public.oportunidades(estado);
 
 -- ---------------------------------------------------------------------
--- 6. FUNCIÓN AUXILIAR: is_admin()
--- Revisa si la persona que hace la consulta tiene rol de administrador.
--- Se usa dentro de las políticas de seguridad (RLS) más abajo.
+-- 5. FUNCIÓN AUXILIAR: is_admin()
 -- ---------------------------------------------------------------------
 create or replace function public.is_admin()
 returns boolean
@@ -132,10 +239,7 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- 7. TRIGGER: crear perfil automáticamente al registrar un usuario nuevo
--- Cuando alguien se crea en auth.users (ya sea manualmente desde el panel
--- de Supabase, o mediante el botón "Crear usuario" dentro del software),
--- este disparador crea su fila en "profiles" con rol "staff" por defecto.
+-- 6. TRIGGER: crear perfil automáticamente al registrar un usuario nuevo
 -- ---------------------------------------------------------------------
 create or replace function public.handle_new_user()
 returns trigger
@@ -161,48 +265,54 @@ create trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 
 -- ---------------------------------------------------------------------
--- 8. ROW LEVEL SECURITY (seguridad a nivel de fila)
+-- 7. ROW LEVEL SECURITY (seguridad a nivel de fila)
 -- ---------------------------------------------------------------------
 alter table public.profiles enable row level security;
 alter table public.medicos enable row level security;
 alter table public.oportunidades enable row level security;
-alter table public.cotizaciones_quirurgicas enable row level security;
 alter table public.seguimientos enable row level security;
 
--- profiles: cada quien ve su propio perfil; el administrador ve todos.
 drop policy if exists "profiles_select_propio_o_admin" on public.profiles;
 create policy "profiles_select_propio_o_admin"
   on public.profiles for select
   using (id = auth.uid() or public.is_admin());
 
--- profiles: cada quien edita su propio nombre, pero NO su propio rol.
 drop policy if exists "profiles_update_propio" on public.profiles;
 create policy "profiles_update_propio"
   on public.profiles for update
   using (id = auth.uid())
   with check (id = auth.uid() and role = (select role from public.profiles where id = auth.uid()));
 
--- profiles: el administrador puede editar cualquier perfil, incluido el rol.
 drop policy if exists "profiles_update_admin" on public.profiles;
 create policy "profiles_update_admin"
   on public.profiles for update
   using (public.is_admin())
   with check (public.is_admin());
 
--- medicos: cualquier persona autenticada puede ver la lista de médicos.
 drop policy if exists "medicos_select_autenticado" on public.medicos;
 create policy "medicos_select_autenticado"
   on public.medicos for select
   using (auth.role() = 'authenticated');
 
--- medicos: solo el administrador puede crear, editar o eliminar médicos.
-drop policy if exists "medicos_admin_todo" on public.medicos;
-create policy "medicos_admin_todo"
-  on public.medicos for all
+-- Cualquier persona autenticada puede agregar un médico nuevo (opción
+-- "OTRO" del formulario); solo el administrador puede editarlos o
+-- desactivarlos.
+drop policy if exists "medicos_insert_autenticado" on public.medicos;
+create policy "medicos_insert_autenticado"
+  on public.medicos for insert
+  with check (auth.role() = 'authenticated');
+
+drop policy if exists "medicos_admin_editar" on public.medicos;
+create policy "medicos_admin_editar"
+  on public.medicos for update
   using (public.is_admin())
   with check (public.is_admin());
 
--- oportunidades: cualquier persona autenticada puede ver y crear.
+drop policy if exists "medicos_admin_eliminar" on public.medicos;
+create policy "medicos_admin_eliminar"
+  on public.medicos for delete
+  using (public.is_admin());
+
 drop policy if exists "oportunidades_select_autenticado" on public.oportunidades;
 create policy "oportunidades_select_autenticado"
   on public.oportunidades for select
@@ -219,38 +329,11 @@ create policy "oportunidades_update_autenticado"
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
 
--- oportunidades: solo el administrador puede eliminar.
 drop policy if exists "oportunidades_delete_admin" on public.oportunidades;
 create policy "oportunidades_delete_admin"
   on public.oportunidades for delete
   using (public.is_admin());
 
--- cotizaciones_quirurgicas: cualquier persona autenticada puede ver, crear
--- y actualizar (incluido el campo "estado" desde Cirugías Efectivas).
-drop policy if exists "cotizaciones_select_autenticado" on public.cotizaciones_quirurgicas;
-create policy "cotizaciones_select_autenticado"
-  on public.cotizaciones_quirurgicas for select
-  using (auth.role() = 'authenticated');
-
-drop policy if exists "cotizaciones_insert_autenticado" on public.cotizaciones_quirurgicas;
-create policy "cotizaciones_insert_autenticado"
-  on public.cotizaciones_quirurgicas for insert
-  with check (auth.role() = 'authenticated');
-
-drop policy if exists "cotizaciones_update_autenticado" on public.cotizaciones_quirurgicas;
-create policy "cotizaciones_update_autenticado"
-  on public.cotizaciones_quirurgicas for update
-  using (auth.role() = 'authenticated')
-  with check (auth.role() = 'authenticated');
-
--- cotizaciones_quirurgicas: solo el administrador puede eliminar.
-drop policy if exists "cotizaciones_delete_admin" on public.cotizaciones_quirurgicas;
-create policy "cotizaciones_delete_admin"
-  on public.cotizaciones_quirurgicas for delete
-  using (public.is_admin());
-
--- seguimientos: cualquier persona autenticada puede ver, crear y actualizar
--- (por ejemplo, para marcar una acción pendiente como realizada).
 drop policy if exists "seguimientos_select_autenticado" on public.seguimientos;
 create policy "seguimientos_select_autenticado"
   on public.seguimientos for select
@@ -267,45 +350,15 @@ create policy "seguimientos_update_autenticado"
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
 
--- seguimientos: solo el administrador puede eliminar.
 drop policy if exists "seguimientos_delete_admin" on public.seguimientos;
 create policy "seguimientos_delete_admin"
   on public.seguimientos for delete
   using (public.is_admin());
 
--- ---------------------------------------------------------------------
--- 9. DATOS INICIALES: médicos de ejemplo (puedes editarlos o borrarlos
--- luego desde el mismo software, o modificando esta lista antes de
--- ejecutar el script).
--- ---------------------------------------------------------------------
-insert into public.medicos (nombre, especialidad) values
-  ('WINDSOR JORDAN TANINAKA', 'Ginecología y Obstetricia'),
-  ('JAVIER MERCADO', 'Medicina Interna'),
-  ('GABRIELA HERRERA ESPECHI', 'Ginecología y Obstetricia'),
-  ('ARIEL IBAÑEZ RODRIGUEZ', 'Pediatría'),
-  ('ESTELA ANGELICA MAMANI HUARACHI', 'Ginecología y Obstetricia'),
-  ('MARCO SANTIAGO ALDANA CABRERA', 'Traumatología'),
-  ('JAIRO AUGUSTO PRADA BARBOSA', 'Cirugía'),
-  ('DANILO RICHARD SERRANO SALAZAR', 'Cirugía'),
-  ('LISSETH IBLIN MOSCOSO ZELAYA', 'Ginecología y Obstetricia'),
-  ('MAURICIO LOPEZ MEJIA', 'Ginecología y Obstetricia'),
-  ('ALEX CONDORI', 'Gastroenterología'),
-  ('SILVIA YEPEZ RODRIGUEZ', 'Ginecología y Obstetricia'),
-  ('LIZETH CALLE VALDA', 'Ginecología y Obstetricia'),
-  ('PABLO MEDRANO', 'Cirugía'),
-  ('MARISOL CUELLAR LANUZA', 'Ginecología y Obstetricia'),
-  ('DANIELA RAMOS', 'Ginecología y Obstetricia'),
-  ('RAUL VELASQUEZ TORREZ', 'Ginecología y Obstetricia'),
-  ('OSVALDO ORTIZ UYUNI', 'Ginecología y Oncología'),
-  ('GLENDA MONTAÑO', 'Ginecología y Obstetricia'),
-  ('JUAN CARLOS RENGEL RETAMOSOS', 'Traumatología'),
-  ('JAVIER PACHECO CARVAJAL', 'Cirugía Plástica')
-on conflict do nothing;
-
 -- =====================================================================
--- LISTO. La base de datos ya está creada.
+-- LISTO. La base de datos ya está creada / actualizada.
 --
--- ÚLTIMO PASO MANUAL (solo la primera vez):
+-- ÚLTIMO PASO MANUAL (solo la primera vez que se crea el proyecto):
 -- Después de crear tu primer usuario administrador desde
 -- "Authentication" → "Add user" en el panel de Supabase, ese usuario
 -- se crea con rol "staff" por defecto. Conviértelo en administrador

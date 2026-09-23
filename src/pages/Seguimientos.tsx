@@ -1,55 +1,33 @@
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { AppLayout } from "../components/AppLayout";
-import { Badge } from "../components/Badge";
 import { OportunidadDrawer } from "../components/OportunidadDrawer";
-import type { Oportunidad, Seguimiento } from "../types";
+import { ESTADOS_TERMINALES } from "../types";
+import type { Oportunidad } from "../types";
 
 function fmtFecha(iso: string) {
+  return new Date(iso).toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
+}
+function fmtFechaCorta(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("es-BO", { day: "2-digit", month: "short" });
 }
 
-interface Pendiente {
-  seguimientoId: string;
-  oportunidad: Oportunidad;
-  accion: string;
-  fecha: string;
-  vencido: boolean;
-}
-
 export function Seguimientos() {
-  const [pendientes, setPendientes] = useState<Pendiente[]>([]);
+  const [oportunidades, setOportunidades] = useState<Oportunidad[]>([]);
   const [cargando, setCargando] = useState(true);
   const [seleccion, setSeleccion] = useState<Oportunidad | null>(null);
 
   async function cargar() {
     setCargando(true);
-    const hoy = new Date();
-
-    const { data: seguimientos } = await supabase
-      .from("seguimientos")
-      .select("*, oportunidades(*)")
-      .not("fecha_proxima_accion", "is", null)
-      .order("fecha_proxima_accion", { ascending: true });
-
-    if (seguimientos) {
-      // Nos quedamos solo con la última acción pendiente registrada por oportunidad.
-      const porOportunidad = new Map<string, any>();
-      for (const s of seguimientos as any[]) {
-        porOportunidad.set(s.oportunidad_id, s);
-      }
-      const lista: Pendiente[] = Array.from(porOportunidad.values())
-        .filter((s) => s.oportunidades)
-        .map((s) => ({
-          seguimientoId: s.id,
-          oportunidad: s.oportunidades as Oportunidad,
-          accion: s.proxima_accion || "Contactar al paciente",
-          fecha: s.fecha_proxima_accion,
-          vencido: new Date(s.fecha_proxima_accion) < hoy,
-        }))
-        .sort((a, b) => a.fecha.localeCompare(b.fecha));
-      setPendientes(lista);
+    const { data } = await supabase
+      .from("oportunidades")
+      .select("*, medicos(nombre)")
+      .order("created_at", { ascending: false });
+    if (data) {
+      const activas = (data as any[])
+        .map((o) => ({ ...o, medico_nombre: o.medicos?.nombre || null }))
+        .filter((o) => !ESTADOS_TERMINALES.includes(o.estado)) as Oportunidad[];
+      setOportunidades(activas);
     }
     setCargando(false);
   }
@@ -58,52 +36,64 @@ export function Seguimientos() {
     cargar();
   }, []);
 
-  async function marcarHecho(seguimientoId: string) {
-    await supabase.from("seguimientos").update({ fecha_proxima_accion: null, proxima_accion: null }).eq("id", seguimientoId);
-    cargar();
-  }
-
   return (
-    <AppLayout title="Seguimientos pendientes" subtitle="Próximas acciones ordenadas por fecha, en todas las oportunidades activas">
-      <div className="ef-card divide-y divide-[color:var(--line)]">
-        {cargando && <div className="p-8 text-center text-sm text-[color:var(--slate-500)]">Cargando…</div>}
-        {!cargando &&
-          pendientes.map((p) => (
-            <div key={p.seguimientoId} className="flex items-center justify-between gap-4 p-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm">{p.oportunidad.paciente_nombre}</span>
-                  <Badge estado={p.oportunidad.estado} />
-                </div>
-                <div className="text-sm text-[color:var(--slate-700)] mt-1">{p.accion}</div>
-              </div>
-              <div
-                className="text-xs font-semibold ef-tabular whitespace-nowrap"
-                style={{ color: p.vencido ? "var(--brick)" : "var(--slate-500)" }}
-              >
-                {p.vencido ? "Vencido · " : ""}
-                {fmtFecha(p.fecha)}
-              </div>
-              <button
-                onClick={() => setSeleccion(p.oportunidad)}
-                className="ef-btn-ghost text-xs font-semibold px-3 py-1.5 rounded-sm border border-[color:var(--line)]"
-              >
-                Ver ficha
-              </button>
-              <button
-                onClick={() => marcarHecho(p.seguimientoId)}
-                className="ef-btn-ghost p-1.5 rounded-sm border border-[color:var(--line)]"
-                title="Marcar como contactado"
-              >
-                <Check size={14} color="var(--teal)" />
-              </button>
-            </div>
-          ))}
-        {!cargando && pendientes.length === 0 && (
-          <div className="p-8 text-center text-sm text-[color:var(--slate-500)]">
-            No hay próximas acciones pendientes.
-          </div>
-        )}
+    <AppLayout title="Seguimientos" subtitle="Casos activos: registra el contacto, su resultado y la próxima acción">
+      <div className="ef-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-[color:var(--slate-500)] border-b border-[color:var(--line)]">
+                <th className="py-3 px-4 font-medium">N° Cotización</th>
+                <th className="py-3 px-4 font-medium">Código cliente</th>
+                <th className="py-3 px-4 font-medium">Diagnóstico / procedimiento</th>
+                <th className="py-3 px-4 font-medium">Médico</th>
+                <th className="py-3 px-4 font-medium">Fecha de indicación</th>
+                <th className="py-3 px-4 font-medium">Fecha probable de cirugía</th>
+                <th className="py-3 px-4 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cargando && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
+                    Cargando…
+                  </td>
+                </tr>
+              )}
+              {!cargando &&
+                oportunidades.map((o) => (
+                  <tr key={o.id} className="border-b border-[color:var(--line)] last:border-0">
+                    <td className="py-3 px-4 ef-tabular font-semibold">{o.numero_cotizacion}</td>
+                    <td className="py-3 px-4 text-[color:var(--slate-700)]">{o.codigo_cliente || "—"}</td>
+                    <td className="py-3 px-4">
+                      <div className="font-semibold">{o.paciente_nombre}</div>
+                      <div className="text-xs text-[color:var(--slate-500)]">{o.diagnostico_procedimiento}</div>
+                    </td>
+                    <td className="py-3 px-4 text-[color:var(--slate-700)]">{o.medico_nombre || "—"}</td>
+                    <td className="py-3 px-4 ef-tabular text-[color:var(--slate-700)]">{fmtFecha(o.created_at)}</td>
+                    <td className="py-3 px-4 ef-tabular text-[color:var(--slate-700)]">
+                      {o.fecha_probable_cirugia ? fmtFechaCorta(o.fecha_probable_cirugia) : "—"}
+                    </td>
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => setSeleccion(o)}
+                        className="ef-btn-ghost text-xs font-semibold px-3 py-1.5 rounded-sm border border-[color:var(--line)]"
+                      >
+                        Gestionar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              {!cargando && oportunidades.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
+                    No hay casos activos por el momento.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <OportunidadDrawer oportunidad={seleccion} onClose={() => setSeleccion(null)} onChanged={cargar} />

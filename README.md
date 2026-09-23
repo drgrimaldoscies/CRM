@@ -4,6 +4,15 @@ Esta guía está escrita para alguien sin conocimientos técnicos. Sigue los
 pasos en orden. No necesitas instalar nada en tu computadora ni usar la
 línea de comandos.
 
+> **¿Ya tenías este sistema funcionando antes?** El archivo
+> `supabase/schema.sql` de esta versión está escrito para poder pegarse
+> de nuevo sin dañar lo que ya tenías: actualiza automáticamente la
+> lista de médicos, las especialidades, los tipos de paciente y los
+> estados de cada caso a la nueva estructura, conservando los datos que
+> ya habías cargado (solo se les actualiza el texto a la nueva
+> nomenclatura). Simplemente vuelve a pegar todo el archivo en el SQL
+> Editor y presiona "Run".
+
 ## Parte 1 — Crear la base de datos en Supabase
 
 1. Entra a [supabase.com](https://supabase.com) e inicia sesión.
@@ -101,10 +110,11 @@ el nombre exacto del bucket a crear y si debe ser público o privado.
 
 **Para probar:**
 - [ ] Ingresar con el usuario administrador.
-- [ ] Crear una oportunidad quirúrgica de prueba.
-- [ ] Registrar un seguimiento.
-- [ ] Registrar una cotización en "Cirugías cotizadas".
-- [ ] Cambiar su estado desde "Cirugías efectivas".
+- [ ] Crear una oportunidad quirúrgica de prueba (probar también la opción "OTRO" en médico).
+- [ ] Verificar que se generó automáticamente un N° de cotización (formato COT-0001).
+- [ ] Desde "Cirugías efectivas", cambiar el estado de esa oportunidad con el menú desplegable.
+- [ ] Desde "Seguimientos", abrir "Gestionar" en un caso activo y registrar un contacto.
+- [ ] Probar la clasificación "Sin seguimiento" (no debe pedir medio de contacto) y luego "Con seguimiento" (sí debe pedirlo).
 - [ ] Crear un segundo usuario (staff comercial) desde la sección Usuarios.
 - [ ] Cerrar sesión e ingresar con ese segundo usuario para confirmar que
       ve la información según su rol (sin montos).

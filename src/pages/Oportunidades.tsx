@@ -7,7 +7,9 @@ import { OportunidadDrawer } from "../components/OportunidadDrawer";
 import { useAuth } from "../context/AuthContext";
 import {
   ESPECIALIDADES,
-  TODOS_LOS_ESTADOS,
+  ESTADOS,
+  TIPOS_PACIENTE,
+  MEDICO_OTRO,
   type Oportunidad,
   type Medico,
 } from "../types";
@@ -15,9 +17,8 @@ import {
 function fmtBs(n: number) {
   return "Bs " + n.toLocaleString("es-BO");
 }
-function diasDesde(iso: string) {
-  const d = new Date(iso.slice(0, 10) + "T00:00:00");
-  return Math.max(0, Math.round((Date.now() - d.getTime()) / 86400000));
+function fmtFecha(iso: string) {
+  return new Date(iso).toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export function Oportunidades() {
@@ -36,10 +37,14 @@ export function Oportunidades() {
   async function cargar() {
     setCargando(true);
     const [{ data: ops }, { data: meds }] = await Promise.all([
-      supabase.from("oportunidades").select("*").order("created_at", { ascending: false }),
-      supabase.from("medicos").select("*").eq("activo", true),
+      supabase.from("oportunidades").select("*, medicos(nombre)").order("created_at", { ascending: false }),
+      supabase.from("medicos").select("*").eq("activo", true).order("nombre"),
     ]);
-    if (ops) setOportunidades(ops as Oportunidad[]);
+    if (ops) {
+      setOportunidades(
+        (ops as any[]).map((o) => ({ ...o, medico_nombre: o.medicos?.nombre || null })) as Oportunidad[]
+      );
+    }
     if (meds) setMedicos(meds as Medico[]);
     setCargando(false);
   }
@@ -76,7 +81,7 @@ export function Oportunidades() {
           </select>
           <select value={fEstado} onChange={(e) => setFEstado(e.target.value)} className="ef-input rounded-sm px-3 py-2 text-sm">
             <option>Todos</option>
-            {TODOS_LOS_ESTADOS.map((e) => (
+            {ESTADOS.map((e) => (
               <option key={e}>{e}</option>
             ))}
           </select>
@@ -93,17 +98,18 @@ export function Oportunidades() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-[color:var(--slate-500)] border-b border-[color:var(--line)]">
+                  <th className="py-3 px-4 font-medium">N° Cotización</th>
                   <th className="py-3 px-4 font-medium">Paciente</th>
-                  <th className="py-3 px-4 font-medium">Especialidad / procedimiento</th>
+                  <th className="py-3 px-4 font-medium">Especialidad / diagnóstico</th>
                   <th className="py-3 px-4 font-medium">Estado</th>
                   {isAdmin && <th className="py-3 px-4 font-medium">Monto</th>}
-                  <th className="py-3 px-4 font-medium">Días registrada</th>
+                  <th className="py-3 px-4 font-medium">Fecha</th>
                 </tr>
               </thead>
               <tbody>
                 {cargando && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
+                    <td colSpan={6} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
                       Cargando…
                     </td>
                   </tr>
@@ -115,15 +121,16 @@ export function Oportunidades() {
                       onClick={() => setSeleccion(o)}
                       className="ef-row border-b border-[color:var(--line)] last:border-0"
                     >
+                      <td className="py-3 px-4 ef-tabular font-semibold">{o.numero_cotizacion}</td>
                       <td className="py-3 px-4">
                         <div className="font-semibold">{o.paciente_nombre}</div>
                         <div className="text-xs text-[color:var(--slate-500)]">
                           {o.tipo_paciente}
-                          {o.paciente_edad ? " · " + o.paciente_edad + " años" : ""}
+                          {o.codigo_cliente ? " · " + o.codigo_cliente : ""}
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <div>{o.procedimiento}</div>
+                        <div>{o.diagnostico_procedimiento}</div>
                         <div className="text-xs text-[color:var(--slate-500)]">{o.especialidad}</div>
                       </td>
                       <td className="py-3 px-4">
@@ -131,13 +138,13 @@ export function Oportunidades() {
                       </td>
                       {isAdmin && <td className="py-3 px-4 ef-tabular">{fmtBs(Number(o.monto))}</td>}
                       <td className="py-3 px-4 ef-tabular text-[color:var(--slate-700)]">
-                        {diasDesde(o.created_at)}
+                        {fmtFecha(o.created_at)}
                       </td>
                     </tr>
                   ))}
                 {!cargando && filtradas.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
+                    <td colSpan={6} className="py-8 text-center text-sm text-[color:var(--slate-500)]">
                       Ninguna oportunidad coincide con los filtros aplicados.
                     </td>
                   </tr>
@@ -168,34 +175,72 @@ function NuevaOportunidadForm({
 }) {
   const [pacienteNombre, setPacienteNombre] = useState("");
   const [pacienteEdad, setPacienteEdad] = useState("");
+  const [codigoCliente, setCodigoCliente] = useState("");
   const [especialidad, setEspecialidad] = useState<string>(ESPECIALIDADES[0]);
-  const [procedimiento, setProcedimiento] = useState("");
+  const [diagnostico, setDiagnostico] = useState("");
   const [medicoId, setMedicoId] = useState("");
-  const [tipoPaciente, setTipoPaciente] = useState<"Particular" | "Asegurado">("Particular");
+  const [medicoOtroNombre, setMedicoOtroNombre] = useState("");
+  const [tipoPaciente, setTipoPaciente] = useState<string>(TIPOS_PACIENTE[0]);
   const [seguro, setSeguro] = useState("");
   const [metodoPago, setMetodoPago] = useState("Efectivo");
   const [monto, setMonto] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const requiereSeguro = tipoPaciente !== "Privado";
+
   async function guardar() {
-    if (!pacienteNombre.trim() || !procedimiento.trim()) {
-      setError("El nombre del paciente y el procedimiento son obligatorios.");
+    if (!pacienteNombre.trim() || !diagnostico.trim()) {
+      setError("El nombre del paciente y el diagnóstico/procedimiento son obligatorios.");
+      return;
+    }
+    if (medicoId === MEDICO_OTRO && !medicoOtroNombre.trim()) {
+      setError("Escribe el nombre del médico.");
       return;
     }
     setGuardando(true);
     setError(null);
+
+    let medicoIdFinal: string | null = medicoId || null;
+
+    // Si eligieron "OTRO", se crea (o reutiliza) el médico en la tabla
+    // "medicos" para que quede disponible también en futuros registros.
+    if (medicoId === MEDICO_OTRO) {
+      const nombreNuevo = medicoOtroNombre.trim().toUpperCase();
+      const { data: existente } = await supabase
+        .from("medicos")
+        .select("id")
+        .eq("nombre", nombreNuevo)
+        .maybeSingle();
+      if (existente) {
+        medicoIdFinal = existente.id;
+      } else {
+        const { data: creado, error: errorMedico } = await supabase
+          .from("medicos")
+          .insert({ nombre: nombreNuevo })
+          .select("id")
+          .single();
+        if (errorMedico || !creado) {
+          setError("No se pudo registrar el nuevo médico. Intenta nuevamente.");
+          setGuardando(false);
+          return;
+        }
+        medicoIdFinal = creado.id;
+      }
+    }
+
     const { error } = await supabase.from("oportunidades").insert({
       paciente_nombre: pacienteNombre,
       paciente_edad: pacienteEdad ? Number(pacienteEdad) : null,
+      codigo_cliente: codigoCliente || null,
       especialidad,
-      procedimiento,
-      medico_id: medicoId || null,
+      diagnostico_procedimiento: diagnostico,
+      medico_id: medicoIdFinal,
       tipo_paciente: tipoPaciente,
-      seguro: tipoPaciente === "Asegurado" ? seguro : null,
+      seguro: requiereSeguro ? seguro : null,
       metodo_pago: metodoPago,
       monto: monto ? Number(monto) : 0,
-      estado: "Indicación quirúrgica",
+      estado: "Cirugía Cotizada",
     });
     setGuardando(false);
     if (error) {
@@ -230,37 +275,52 @@ function NuevaOportunidadForm({
               type="number"
               className="ef-input rounded-sm px-3 py-2 text-sm"
             />
-            <select value={tipoPaciente} onChange={(e) => setTipoPaciente(e.target.value as any)} className="ef-input rounded-sm px-3 py-2 text-sm">
-              <option>Particular</option>
-              <option>Asegurado</option>
-            </select>
+            <input
+              value={codigoCliente}
+              onChange={(e) => setCodigoCliente(e.target.value)}
+              placeholder="Código de cliente"
+              className="ef-input rounded-sm px-3 py-2 text-sm"
+            />
           </div>
+          <select value={tipoPaciente} onChange={(e) => setTipoPaciente(e.target.value)} className="ef-input rounded-sm px-3 py-2 text-sm">
+            {TIPOS_PACIENTE.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+          {requiereSeguro && (
+            <input
+              value={seguro}
+              onChange={(e) => setSeguro(e.target.value)}
+              placeholder="Aseguradora, convenio o institución"
+              className="ef-input rounded-sm px-3 py-2 text-sm"
+            />
+          )}
           <select value={especialidad} onChange={(e) => setEspecialidad(e.target.value)} className="ef-input rounded-sm px-3 py-2 text-sm">
             {ESPECIALIDADES.map((e) => (
               <option key={e}>{e}</option>
             ))}
           </select>
-          <input
-            value={procedimiento}
-            onChange={(e) => setProcedimiento(e.target.value)}
-            placeholder="Procedimiento"
-            className="ef-input rounded-sm px-3 py-2 text-sm"
+          <textarea
+            value={diagnostico}
+            onChange={(e) => setDiagnostico(e.target.value)}
+            placeholder="Diagnóstico o procedimiento"
+            rows={2}
+            className="ef-input rounded-sm px-3 py-2 text-sm resize-none"
           />
           <select value={medicoId} onChange={(e) => setMedicoId(e.target.value)} className="ef-input rounded-sm px-3 py-2 text-sm">
             <option value="">Sin médico asignado</option>
-            {medicos
-              .filter((m) => m.especialidad === especialidad)
-              .map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nombre}
-                </option>
-              ))}
+            {medicos.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nombre}
+              </option>
+            ))}
+            <option value={MEDICO_OTRO}>OTRO (escribir nombre)</option>
           </select>
-          {tipoPaciente === "Asegurado" && (
+          {medicoId === MEDICO_OTRO && (
             <input
-              value={seguro}
-              onChange={(e) => setSeguro(e.target.value)}
-              placeholder="Compañía de seguro"
+              value={medicoOtroNombre}
+              onChange={(e) => setMedicoOtroNombre(e.target.value)}
+              placeholder="Nombre del médico solicitante"
               className="ef-input rounded-sm px-3 py-2 text-sm"
             />
           )}

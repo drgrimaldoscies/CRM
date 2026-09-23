@@ -8,61 +8,83 @@ export interface Profile {
 }
 
 export const ESPECIALIDADES = [
-  "Cirugía Plástica",
-  "Cirugía Bariátrica",
-  "Traumatología",
-  "Ginecología",
-  "Oftalmología",
+  "Cirugía Cardiovascular",
+  "Cirugía de Cabeza, Cuello y Maxilofacial",
+  "Cirugía de Mano",
+  "Cirugía Gastroenterológica y del Aparato Digestivo",
+  "Cirugía General",
+  "Cirugía Oncología (Oncocirugía)",
+  "Cirugía Pediátrica",
+  "Cirugía Plástica, Estética y Reparadora",
+  "Cirugía Torácica",
+  "Cirugía Vascular y Angiología",
+  "Gastroenterología",
+  "Ginecología y Obstetricia",
+  "Ginecología y Oncología",
+  "Mastología",
+  "Medicina Interna",
+  "Neurocirugía",
+  "Oftalmología (Cirugía Ocular)",
+  "Otorrinolaringología (Cirugía de Oído, Nariz y Garganta)",
+  "Pediatría",
+  "Proctología",
+  "Traumatología y Cirugía Ortopédica",
+  "Urología",
 ] as const;
 
-export const ESTADOS_FLUJO = [
-  "Indicación quirúrgica",
-  "Pendiente de cotización",
-  "Cotizado",
-  "Presupuesto enviado",
-  "En seguimiento",
-  "Cirugía aceptada",
-  "Cirugía programada",
+// Los 6 estados del ciclo de vida de una oportunidad quirúrgica.
+export const ESTADOS = [
+  "Cirugía Cotizada",
+  "Cirugía Programada",
+  "Cotización con seguimiento",
+  "Cirugía postergada",
   "Cirugía realizada",
+  "Cirugía no convertida",
 ] as const;
 
-export const ESTADOS_ALTERNOS = [
-  "No convertido",
-  "Perdido",
-  "Postergado",
-  "Cancelado",
-] as const;
+// Estados que ya no admiten más gestión (fuera del embudo activo).
+export const ESTADOS_TERMINALES = ["Cirugía realizada", "Cirugía no convertida"];
 
-export const TODOS_LOS_ESTADOS = [...ESTADOS_FLUJO, ...ESTADOS_ALTERNOS];
+export const TIPOS_PACIENTE = [
+  "Privado",
+  "Asegurado o Convenio",
+  "Institucional",
+  "Seguridad Social",
+] as const;
 
 export const CANALES = [
   "WhatsApp",
-  "Llamada telefónica",
+  "Llamada Telefónica",
   "Contacto presencial",
   "Correo electrónico",
-  "Otro",
 ] as const;
+
+export const CLASIFICACIONES_SEGUIMIENTO = ["Con seguimiento", "Sin seguimiento"] as const;
+
+export const MEDICO_OTRO = "OTRO";
 
 export interface Medico {
   id: string;
   nombre: string;
-  especialidad: string;
   activo: boolean;
 }
 
 export interface Oportunidad {
   id: string;
+  numero_cotizacion: string;
   paciente_nombre: string;
   paciente_edad: number | null;
+  codigo_cliente: string | null;
   especialidad: string;
-  procedimiento: string;
+  diagnostico_procedimiento: string;
   medico_id: string | null;
   medico_nombre?: string | null;
-  tipo_paciente: "Particular" | "Asegurado";
+  tipo_paciente: string;
   seguro: string | null;
   metodo_pago: string;
   monto: number;
   estado: string;
+  fecha_probable_cirugia: string | null;
   motivo_perdida: string | null;
   created_at: string;
   updated_at: string;
@@ -72,32 +94,12 @@ export interface Seguimiento {
   id: string;
   oportunidad_id: string;
   fecha: string;
-  canal: string;
+  clasificacion: string | null;
+  canal: string | null;
   responsable_id: string | null;
   responsable_nombre?: string | null;
-  resultado: string;
-  observaciones: string | null;
+  resultado: string | null;
   proxima_accion: string | null;
   fecha_proxima_accion: string | null;
-  created_at: string;
-}
-
-export const ESTADOS_COTIZACION = [
-  "Cirugía Realizada",
-  "Cirugía Programada",
-  "Con seguimiento",
-  "Cirugía Postergada",
-  "No convertido",
-] as const;
-
-export interface CotizacionQuirurgica {
-  id: string;
-  numero_cotizacion: string;
-  fecha: string;
-  paciente_nombre: string;
-  codigo_cliente: string | null;
-  diagnostico_procedimiento: string;
-  medico_solicitante: string;
-  estado: string | null;
   created_at: string;
 }

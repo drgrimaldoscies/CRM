@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Login } from "../pages/Login";
 import { Dashboard } from "../pages/Dashboard";
 import { Oportunidades } from "../pages/Oportunidades";
-import { CirugiasCotizadas } from "../pages/CirugiasCotizadas";
 import { CirugiasEfectivas } from "../pages/CirugiasEfectivas";
 import { Seguimientos } from "../pages/Seguimientos";
 import { Usuarios } from "../pages/Usuarios";
@@ -25,14 +24,6 @@ export function AppRoutes() {
         element={
           <ProtectedRoute>
             <Oportunidades />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/cirugias-cotizadas"
-        element={
-          <ProtectedRoute>
-            <CirugiasCotizadas />
           </ProtectedRoute>
         }
       />
