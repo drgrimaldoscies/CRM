@@ -279,12 +279,27 @@ create policy "seguimientos_delete_admin"
 -- ejecutar el script).
 -- ---------------------------------------------------------------------
 insert into public.medicos (nombre, especialidad) values
-  ('Dr. Iván Herrera', 'Cirugía Plástica'),
-  ('Dra. Carla Montaño', 'Cirugía Plástica'),
-  ('Dr. Marco Peña', 'Cirugía Bariátrica'),
-  ('Dra. Lucía Rocha', 'Traumatología'),
-  ('Dr. Sergio Vaca', 'Ginecología'),
-  ('Dra. Andrea Salvatierra', 'Oftalmología')
+  ('WINDSOR JORDAN TANINAKA', 'Ginecología y Obstetricia'),
+  ('JAVIER MERCADO', 'Medicina Interna'),
+  ('GABRIELA HERRERA ESPECHI', 'Ginecología y Obstetricia'),
+  ('ARIEL IBAÑEZ RODRIGUEZ', 'Pediatría'),
+  ('ESTELA ANGELICA MAMANI HUARACHI', 'Ginecología y Obstetricia'),
+  ('MARCO SANTIAGO ALDANA CABRERA', 'Traumatología'),
+  ('JAIRO AUGUSTO PRADA BARBOSA', 'Cirugía'),
+  ('DANILO RICHARD SERRANO SALAZAR', 'Cirugía'),
+  ('LISSETH IBLIN MOSCOSO ZELAYA', 'Ginecología y Obstetricia'),
+  ('MAURICIO LOPEZ MEJIA', 'Ginecología y Obstetricia'),
+  ('ALEX CONDORI', 'Gastroenterología'),
+  ('SILVIA YEPEZ RODRIGUEZ', 'Ginecología y Obstetricia'),
+  ('LIZETH CALLE VALDA', 'Ginecología y Obstetricia'),
+  ('PABLO MEDRANO', 'Cirugía'),
+  ('MARISOL CUELLAR LANUZA', 'Ginecología y Obstetricia'),
+  ('DANIELA RAMOS', 'Ginecología y Obstetricia'),
+  ('RAUL VELASQUEZ TORREZ', 'Ginecología y Obstetricia'),
+  ('OSVALDO ORTIZ UYUNI', 'Ginecología y Oncología'),
+  ('GLENDA MONTAÑO', 'Ginecología y Obstetricia'),
+  ('JUAN CARLOS RENGEL RETAMOSOS', 'Traumatología'),
+  ('JAVIER PACHECO CARVAJAL', 'Cirugía Plástica')
 on conflict do nothing;
 
 -- =====================================================================
